@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Backup/transfer for API 31+. Same allowlist as backup_rules.xml: only user preferences.
+
+     Everything console (private-mode) related stays out by omission. The console Room database
+     is SQLCipher-encrypted with a passphrase held in console_db_key.xml, itself Keystore-backed
+     EncryptedSharedPreferences — but Auto Backup would still copy the encrypted bytes off-device,
+     and Android Keystore keys never leave the device, so a restored copy would be permanently
+     undecryptable garbage rather than simply absent. An allowlist also means any console store
+     added later can't leak into a backup by being forgotten here. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="file" path="datastore/settings.preferences_pb" />
+        <include domain="sharedpref" path="theme_prefs_sync.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="file" path="datastore/settings.preferences_pb" />
+        <include domain="sharedpref" path="theme_prefs_sync.xml" />
+    </device-transfer>
+</data-extraction-rules>
