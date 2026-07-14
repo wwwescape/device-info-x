@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Normal permissions: granted automatically at install, no runtime prompt. -->
+    <!-- Only ever used by the console (private-mode) talking to a self-hosted Device Info X
+         Server the user configures themselves (Phase 11) — the public app makes no network
+         calls of its own. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+
+    <!-- Dangerous permissions: requested contextually from the Network screen only,
+         to show WiFi SSID, detailed cellular info, and paired Bluetooth device names.
+         COARSE is declared alongside FINE per Android 12+ requirements, even though we
+         only ask for FINE at runtime — see NetworkScreen's permission list. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!-- Console-only (Live Location Sharing) — requested contextually from that screen's own
+         toggle, as a second, separate runtime request after FINE (already covered above for the
+         public Network screen's unrelated purpose; this app is out-of-Play-Store so there's no
+         Sensitive Permissions declaration gate, but the OS-level two-step flow — FINE first, then
+         this as its own "Allow all the time" request routed through system Settings on Android
+         11+ — still applies regardless of distribution channel). Lets the foreground service below
+         keep sharing position while the app is backgrounded, matching WhatsApp/Signal's own live
+         location behavior. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+
+    <!-- Requested contextually from the console's message composer, only when the mic button is
+         tapped, for voice notes (Phase 7). -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Requested contextually from the console's message composer, only when the Camera attach
+         option is tapped, to capture a photo directly instead of picking one from the gallery.
+         Not required — Gallery attach works with no camera hardware at all, so a device without
+         one (or one that denies the permission) just never gets to use that specific option;
+         without this explicit uses-feature, the CAMERA permission alone would otherwise imply a
+         required camera to Play/Chrome OS and wrongly exclude camera-less devices from install. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!-- Normal permission, no runtime prompt — Call Room's ringing vibration (Phase 2). Added
+         now, ahead of the actual Vibrator call, so the manifest change isn't split awkwardly
+         across phases. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- Normal permission, no runtime prompt — required for any PowerManager.WakeLock, including
+         the PROXIMITY_SCREEN_OFF_WAKE_LOCK an active voice call holds (CallProximityController). -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Requested once during first-run account setup (Phase 11's deferred FCM item), right
+         after the server account exists — see PinGateDialog. Ignored pre-API 33 (granted at
+         install like any other permission there). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application
+        android:name=".DeviceInfoXApplication"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:enableOnBackInvokedCallback="true"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.DeviceInfoX">
+
+        <!-- Console-only (Live Location Sharing) — required by the Maps SDK regardless of
+             which screen actually renders a map; harmless to declare app-wide. Value is injected
+             from local.properties' MAPS_API_KEY at build time (app/build.gradle.kts), never
+             hardcoded/committed — see keystore.properties for the same pattern applied to release
+             signing. -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="${mapsApiKey}" />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.DeviceInfoX.Starting">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Console (private-mode): deliberately shares MainActivity's task (no taskAffinity of
+             its own, launched without FLAG_ACTIVITY_NEW_TASK — see DeviceInfoXApp.kt) so Recents
+             only ever shows one "Device Info X" card. A separate task used to leave a second,
+             permanently FLAG_SECURE-blanked card there whenever the console was open — itself a
+             giveaway independent of any real content leak. Never externally launchable. -->
+        <activity
+            android:name=".console.ui.nav.ConsoleActivity"
+            android:exported="false"
+            android:theme="@style/Theme.DeviceInfoX"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- No console/private-mode wording anywhere here — same disguise-preserving reasoning
+             as ConsoleActivity's own manifest entry. Never externally launchable beyond the
+             standard FCM intent-filter. -->
+        <service
+            android:name=".console.push.ConsoleFcmService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- Console-only (Live Location Sharing) — the one component that keeps running while
+             the console itself is backgrounded; see LiveLocationService's own doc comment. Never
+             externally launchable, only ever started/stopped by this app itself. -->
+        <service
+            android:name=".console.data.location.LiveLocationService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
+        <!-- Resets a push category's unseen count when its notification is swiped away —
+             see ConsoleFcmService's setDeleteIntent and NotificationDismissReceiver's own doc
+             comment. Only ever fired via this app's own PendingIntent, never externally. -->
+        <receiver
+            android:name=".console.push.NotificationDismissReceiver"
+            android:exported="false" />
+
+        <!-- Backs the message composer's camera capture: TakePicture() needs a writable
+             content:// Uri to capture into, which requires declaring a provider for it. Never
+             externally accessible beyond the grantUriPermissions handoff to the system Camera
+             app that ActivityResultContracts.TakePicture() itself performs. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <activity
+            android:name=".widget.DeviceInfoXWidgetConfigActivity"
+            android:exported="true"
+            android:theme="@style/Theme.DeviceInfoX">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
+        <receiver
+            android:name=".widget.DeviceInfoXWidgetReceiver"
+            android:label="@string/widget_name_device_info_x"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/device_info_x_widget_info" />
+        </receiver>
+    </application>
+
+</manifest>
