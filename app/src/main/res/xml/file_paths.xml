@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Matches createCameraCaptureUri()'s own "camera_captures" subdir under context.cacheDir
+         (HomeScreen.kt). -->
+    <cache-path name="camera_captures" path="camera_captures/" />
+    <!-- Matches ConsolePushChannelManager.chimeSoundUri()'s own "notification_sounds" subdir
+         under context.filesDir — where R.raw.chime gets copied to so it can be exposed as a
+         content:// Uri (an android.resource:// Uri set directly as a NotificationChannel's sound
+         is unreliable — see that function's own doc comment). -->
+    <files-path name="notification_sounds" path="notification_sounds/" />
+</paths>
